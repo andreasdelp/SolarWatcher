@@ -9,14 +9,19 @@ const timeUtc = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-di
 const num = (v, digits = 1) => v.toLocaleString(LOCALE, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
 const detailsEl = document.getElementById('details');
-const listEl = document.getElementById('list');
+const placeEl = document.getElementById('place');
+const selectEl = document.getElementById('select');
+const prevEl = document.getElementById('prev');
+const nextEl = document.getElementById('next');
 
 // ---------------------------------------------------------------- Karte
 
 const map = L.map('map', { worldCopyJump: true, minZoom: 2, zoomSnap: 0.5 }).setView([48, 10], 4);
 
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// Deutscher OpenStreetMap-Kartenstil: gleiche Daten, Orte weltweit deutsch bzw. lateinisch beschriftet.
+L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
     maxZoom: 19,
+    maxNativeZoom: 18,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
 }).addTo(map);
 L.control.scale({ imperial: false }).addTo(map);
@@ -26,6 +31,7 @@ const tooltip = L.tooltip({ className: 'totality-tip', direction: 'right', offse
 
 let eclipses = [];
 let current = null;
+let pin = null; // markierter Ort: { lat, lon, marker }
 
 // ---------------------------------------------------------------- Formatierung
 
@@ -35,8 +41,10 @@ function formatDuration(seconds) {
 }
 
 function formatCoord(lat, lon) {
-    return `${num(Math.abs(lat), 2)}° ${lat >= 0 ? 'N' : 'S'}, ${num(Math.abs(lon), 2)}° ${lon >= 0 ? 'O' : 'W'}`;
+    return `${num(Math.abs(lat), 3)}° ${lat >= 0 ? 'N' : 'S'}, ${num(Math.abs(lon), 3)}° ${lon >= 0 ? 'O' : 'W'}`;
 }
+
+const wrapLon = lon => ((lon + 540) % 360 + 360) % 360 - 180;
 
 function eclipseDate(e) {
     const [y, m, d] = e.date.split('-').map(Number);
@@ -51,7 +59,56 @@ function countdown(e) {
     return `in ${num(days / 365.25, 1)} Jahren`;
 }
 
-// ---------------------------------------------------------------- Infofenster
+// ---------------------------------------------------------------- Zeitzonen (Ortszeit)
+
+const zoneCache = new Map();   // Rasterzelle -> IANA-Zeitzone | Promise
+const formatCache = new Map(); // IANA-Zeitzone -> { time, date } | null
+
+function zoneAt(lat, lon) {
+    const key = `${lat.toFixed(1)},${lon.toFixed(1)}`;
+    if (!zoneCache.has(key)) {
+        const promise = fetch(`api/timezone?lat=${lat.toFixed(3)}&lon=${lon.toFixed(3)}`)
+            .then(r => (r.ok ? r.json() : null))
+            .then(j => {
+                const zone = j?.timeZone ?? 'UTC';
+                zoneCache.set(key, zone);
+                return zone;
+            })
+            .catch(() => { zoneCache.delete(key); return null; });
+        zoneCache.set(key, promise);
+    }
+    return zoneCache.get(key);
+}
+
+function localFormat(zone) {
+    if (!formatCache.has(zone)) {
+        let fmt;
+        try {
+            fmt = {
+                time: new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short', timeZone: zone }),
+                date: new Intl.DateTimeFormat(LOCALE, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: zone }),
+            };
+        } catch {
+            fmt = null; // Zeitzone dem Browser unbekannt
+        }
+        formatCache.set(zone, fmt);
+    }
+    return formatCache.get(zone);
+}
+
+/** Liefert Formatierer für die Ortszeit; solange die Zeitzone noch geladen wird, Weltzeit. */
+function clockAt(lat, lon, onReady) {
+    const zone = zoneAt(lat, lon);
+    if (zone instanceof Promise) zone.then(onReady);
+    const fmt = typeof zone === 'string' ? localFormat(zone) : null;
+    return {
+        time: t => (fmt ? fmt.time.format(toDate(current, t)) : `${timeUtc.format(toDate(current, t))} UTC`),
+        date: t => (fmt ? fmt.date.format(toDate(current, t)) : dateShort.format(toDate(current, t))),
+        label: typeof zone === 'string' ? (fmt ? zone.replace(/_/g, ' ') : 'Weltzeit') : 'wird ermittelt …',
+    };
+}
+
+// ---------------------------------------------------------------- Infofenster: Finsternis
 
 function renderDetails(e) {
     const g = e.greatest;
@@ -76,28 +133,90 @@ function renderDetails(e) {
         <h2>Ausgewählte Finsternis</h2>
         <div class="date">${dateLong.format(eclipseDate(e))}</div>
         <div class="sub">Totale Sonnenfinsternis · ${countdown(e)}</div>
-        <dl>${rows.join('')}</dl>
-        <p class="hint">Maus über den Totalitätsstreifen bewegen (oder antippen): Beginn und Dauer der Totalität in Ortszeit sowie die Sonnenhöhe.</p>`;
+        <dl>${rows.join('')}</dl>`;
 }
 
-function renderList() {
-    const today = Date.now() - 86400000;
-    listEl.innerHTML = '';
-    for (const e of eclipses) {
-        const li = document.createElement('li');
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.dataset.id = e.id;
-        if (eclipseDate(e) < today) btn.classList.add('past');
-        const dur = e.greatest.durationSeconds != null ? formatDuration(e.greatest.durationSeconds) : 'nicht zentral';
-        btn.innerHTML = `<span>${dateShort.format(eclipseDate(e))}</span><span class="dur">${dur}</span>`;
-        btn.addEventListener('click', () => select(e.id));
-        li.append(btn);
-        listEl.append(li);
+// ---------------------------------------------------------------- Infofenster: markierter Ort
+
+function renderPlace() {
+    if (!current) return;
+    if (!pin) {
+        placeEl.innerHTML = `
+            <h2>Ort</h2>
+            <p class="muted">Auf die Karte klicken oder tippen, um einen Ort zu markieren – hier erscheinen dann
+            Beginn, Dauer und Sonnenhöhe der Totalität. Die Markierung lässt sich verschieben.</p>`;
+        return;
     }
+
+    const { lat, lon } = pin;
+    const local = localTotality(current.elements, lat, lon);
+    const mine = pin;
+    const clock = clockAt(lat, lon, () => { if (pin === mine) renderPlace(); });
+    const rows = [];
+    const row = (label, value, cls = '') => rows.push(`<dt>${label}</dt><dd class="${cls}">${value}</dd>`);
+
+    if (local) {
+        row('Dauer der Totalität', formatDuration(local.durationSeconds), 'big');
+        row('Datum', clock.date(local.max));
+        row('Beginn', clock.time(local.start));
+        row('Mitte', clock.time(local.max));
+        row('Ende', clock.time(local.end));
+        row('Sonnenhöhe', `${num(local.sunAltitude)}°`);
+        row('Zeitzone', clock.label);
+    }
+    row('Koordinaten', formatCoord(lat, lon));
+
+    placeEl.innerHTML = `
+        <h2>Markierter Ort</h2>
+        <div class="title">${local ? 'Im Totalitätsstreifen' : 'Außerhalb des Totalitätsstreifens'}</div>
+        <div class="sub ${local ? '' : 'outside'}">${local
+            ? `Totale Finsternis am ${dateShort.format(eclipseDate(current))}`
+            : `Am ${dateShort.format(eclipseDate(current))} ist hier keine totale Finsternis zu sehen.`}</div>
+        <dl>${rows.join('')}</dl>
+        <button type="button" id="unpin">Markierung entfernen</button>`;
+    document.getElementById('unpin').addEventListener('click', clearPin);
+}
+
+function setPin(latlng) {
+    if (Math.abs(latlng.lat) > 90) return;
+    if (!pin) {
+        const marker = L.marker(latlng, { draggable: true, autoPan: true, title: 'Markierter Ort' }).addTo(map);
+        marker.on('drag', () => movePin(marker.getLatLng()));
+        pin = { marker };
+    } else {
+        pin.marker.setLatLng(latlng);
+    }
+    movePin(latlng);
+}
+
+function movePin(latlng) {
+    pin = { marker: pin.marker, lat: latlng.lat, lon: wrapLon(latlng.lng) };
+    renderPlace();
+}
+
+function clearPin() {
+    if (pin) map.removeLayer(pin.marker);
+    pin = null;
+    renderPlace();
 }
 
 // ---------------------------------------------------------------- Auswahl und Pfad
+
+function renderPicker() {
+    selectEl.innerHTML = '';
+    for (const e of eclipses) {
+        const dur = e.greatest.durationSeconds != null ? formatDuration(e.greatest.durationSeconds) : 'nicht zentral';
+        selectEl.add(new Option(`${dateShort.format(eclipseDate(e))} · ${dur}`, e.id));
+    }
+    selectEl.addEventListener('change', () => select(selectEl.value));
+    prevEl.addEventListener('click', () => step(-1));
+    nextEl.addEventListener('click', () => step(1));
+}
+
+function step(delta) {
+    const target = eclipses[eclipses.indexOf(current) + delta];
+    if (target) select(target.id);
+}
 
 async function select(id, { fit = true } = {}) {
     const e = eclipses.find(x => x.id === id);
@@ -105,11 +224,11 @@ async function select(id, { fit = true } = {}) {
     current = e;
     hideTooltip();
     renderDetails(e);
-    for (const btn of listEl.querySelectorAll('button')) {
-        const active = btn.dataset.id === id;
-        btn.setAttribute('aria-current', active ? 'true' : 'false');
-        if (active) btn.scrollIntoView({ block: 'nearest' });
-    }
+    renderPlace();
+    const index = eclipses.indexOf(e);
+    selectEl.value = id;
+    prevEl.disabled = index === 0;
+    nextEl.disabled = index === eclipses.length - 1;
     history.replaceState(null, '', `#${id}`);
 
     const res = await fetch(`api/eclipses/${id}/path`);
@@ -144,41 +263,7 @@ async function select(id, { fit = true } = {}) {
     }
 }
 
-// ---------------------------------------------------------------- Zeitzonen (Ortszeit am Mauszeiger)
-
-const zoneCache = new Map();   // Rasterzelle -> IANA-Zeitzone | Promise
-const formatCache = new Map(); // IANA-Zeitzone -> Intl.DateTimeFormat
-
-function zoneAt(lat, lon) {
-    const key = `${lat.toFixed(1)},${lon.toFixed(1)}`;
-    if (!zoneCache.has(key)) {
-        const promise = fetch(`api/timezone?lat=${lat.toFixed(3)}&lon=${lon.toFixed(3)}`)
-            .then(r => (r.ok ? r.json() : null))
-            .then(j => {
-                const zone = j?.timeZone ?? 'UTC';
-                zoneCache.set(key, zone);
-                return zone;
-            })
-            .catch(() => { zoneCache.delete(key); return null; });
-        zoneCache.set(key, promise);
-    }
-    return zoneCache.get(key);
-}
-
-function localFormat(zone) {
-    if (!formatCache.has(zone)) {
-        let fmt;
-        try {
-            fmt = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short', timeZone: zone });
-        } catch {
-            fmt = null; // Zeitzone dem Browser unbekannt
-        }
-        formatCache.set(zone, fmt);
-    }
-    return formatCache.get(zone);
-}
-
-// ---------------------------------------------------------------- Tooltip
+// ---------------------------------------------------------------- Tooltip (Maus)
 
 let hover = null; // { lat, lon, latlng }
 let frame = 0;
@@ -198,34 +283,28 @@ function updateTooltip() {
         return;
     }
 
-    const zone = zoneAt(lat, lon);
-    if (zone instanceof Promise) zone.then(() => { if (hover && hover.latlng === latlng) updateTooltip(); });
-    const fmt = typeof zone === 'string' ? localFormat(zone) : null;
-    const time = t => (fmt ? fmt.format(toDate(current, t)) : `${timeUtc.format(toDate(current, t))} UTC`);
-    const zoneLabel = typeof zone === 'string' ? (fmt ? `Ortszeit · ${zone.replace(/_/g, ' ')}` : 'Weltzeit') : 'Ortszeit wird ermittelt …';
-
+    const clock = clockAt(lat, lon, () => { if (hover && hover.latlng === latlng) updateTooltip(); });
     tooltip.setLatLng(latlng).setContent(`
         <div class="tip-title">Totalität</div>
         <table>
-            <tr><th>Beginn</th><td>${time(local.start)}</td></tr>
-            <tr><th>Ende</th><td>${time(local.end)}</td></tr>
+            <tr><th>Beginn</th><td>${clock.time(local.start)}</td></tr>
+            <tr><th>Ende</th><td>${clock.time(local.end)}</td></tr>
             <tr><th>Dauer</th><td>${formatDuration(local.durationSeconds)}</td></tr>
             <tr><th>Sonnenhöhe</th><td>${num(local.sunAltitude)}°</td></tr>
         </table>
-        <div class="tip-zone">${zoneLabel}</div>`);
+        <div class="tip-zone">Ortszeit · ${clock.label}</div>`);
     if (!map.hasLayer(tooltip)) tooltip.addTo(map);
 }
 
-function onPointer(ev) {
-    const lat = ev.latlng.lat;
-    if (Math.abs(lat) > 90) return hideTooltip();
-    hover = { lat, lon: ((ev.latlng.lng + 540) % 360 + 360) % 360 - 180, latlng: ev.latlng };
+map.on('mousemove', ev => {
+    // Auf Touch-Geräten lösen Tipper synthetische Mausereignisse aus - dort zählt nur die Markierung.
+    if (ev.originalEvent?.sourceCapabilities?.firesTouchEvents) return;
+    if (Math.abs(ev.latlng.lat) > 90) return hideTooltip();
+    hover = { lat: ev.latlng.lat, lon: wrapLon(ev.latlng.lng), latlng: ev.latlng };
     if (!frame) frame = requestAnimationFrame(updateTooltip);
-}
-
-map.on('mousemove', onPointer);
-map.on('click', onPointer);
+});
 map.on('mouseout', hideTooltip);
+map.on('click', ev => setPin(ev.latlng));
 
 // ---------------------------------------------------------------- Start
 
@@ -238,7 +317,7 @@ async function init() {
         detailsEl.innerHTML = `<p class="muted">Die Finsternisdaten konnten nicht geladen werden (${err.message}).</p>`;
         return;
     }
-    renderList();
+    renderPicker();
 
     const wanted = location.hash.slice(1);
     const today = Date.now() - 86400000;

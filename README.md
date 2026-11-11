@@ -2,9 +2,10 @@
 
 Interaktive Karte der totalen Sonnenfinsternisse von 2026 bis 2100 (ASP.NET Core, .NET 10).
 
-- Karte mit OpenStreetMap-Kacheln (Leaflet), Totalitätsstreifen mit Zentrallinie
-- Infofenster mit den Kenndaten der gewählten Finsternis und der Liste aller Finsternisse
-- Tooltip im Streifen: Beginn und Ende der Totalität in Ortszeit, Dauer, Sonnenhöhe
+- Karte mit OpenStreetMap-Kacheln im deutschen Kartenstil (Leaflet), Totalitätsstreifen mit Zentrallinie
+- Infofenster mit Auswahlzeile (vor/zurück) und den Kenndaten der gewählten Finsternis
+- Tooltip im Streifen (Maus): Beginn und Ende der Totalität in Ortszeit, Dauer, Sonnenhöhe
+- Klick oder Tippen setzt eine verschiebbare Markierung; die Ortsdetails stehen dann im Infofenster
 
 ## Starten
 
@@ -70,4 +71,4 @@ API: `api/eclipses`, `api/eclipses/{id}/path`, `api/eclipses/{id}/local?lat=&lon
 - Hybride (ringförmig-totale) Finsternisse sind nicht enthalten.
 - Die Mercator-Karte endet bei ±85° Breite; Streifen in Polnähe werden dort abgeschnitten.
 - Zeitzonen: Paket GeoTimeZone (Grenzen aus OpenStreetMap), Sommerzeitregeln nach heutigem Stand des Browsers.
-- Kacheln kommen direkt von tile.openstreetmap.org; bei hoher Last bitte deren Nutzungsrichtlinie beachten.
+- Kacheln kommen direkt von tile.openstreetmap.de (FOSSGIS); bei hoher Last bitte deren Nutzungsrichtlinie beachten.

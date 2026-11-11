@@ -30,14 +30,19 @@
             </div>
         </header>
 
-        <section id="details" aria-live="polite">
-            <p class="muted">Daten werden geladen …</p>
-        </section>
+        <nav id="picker" aria-label="Finsternis auswählen">
+            <button id="prev" type="button" aria-label="Vorherige Finsternis" title="Vorherige Finsternis">‹</button>
+            <select id="select" aria-label="Finsternis"></select>
+            <button id="next" type="button" aria-label="Nächste Finsternis" title="Nächste Finsternis">›</button>
+        </nav>
 
-        <section id="list-section">
-            <h2>Alle Finsternisse</h2>
-            <ol id="list"></ol>
-        </section>
+        <div id="scroll">
+            <section id="details" aria-live="polite">
+                <p class="muted">Daten werden geladen …</p>
+            </section>
+
+            <section id="place" aria-live="polite"></section>
+        </div>
 
         <footer>
             Finsternisdaten: Besselsche Elemente von Fred Espenak, NASA/GSFC.
