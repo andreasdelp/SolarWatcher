@@ -64,7 +64,7 @@ API: `api/eclipses`, `api/eclipses/{id}/path`, `api/eclipses/{id}/local?lat=&lon
 
 ## Daten und Genauigkeit
 
-- Besselsche Elemente: Fred Espenak, NASA/GSFC (eclipse.gsfc.nasa.gov). Die daraus berechneten Werte
+- Besselsche Elemente: „Eclipse Predictions by Fred Espenak, NASA's GSFC“ (eclipse.gsfc.nasa.gov). Die daraus berechneten Werte
   stimmen mit den NASA-Angaben überein (z. B. 12.08.2026: größte Finsternis 17:45:53,8 UT, 2 min 18,2 s).
 - Zeiten künftiger Finsternisse hängen von der Prognose für ΔT ab; für späte Jahre sind Abweichungen
   im Sekundenbereich möglich. Mondrandprofil und Geländehöhe sind nicht berücksichtigt.
@@ -72,3 +72,8 @@ API: `api/eclipses`, `api/eclipses/{id}/path`, `api/eclipses/{id}/local?lat=&lon
 - Die Mercator-Karte endet bei ±85° Breite; Streifen in Polnähe werden dort abgeschnitten.
 - Zeitzonen: Paket GeoTimeZone (Grenzen aus OpenStreetMap), Sommerzeitregeln nach heutigem Stand des Browsers.
 - Kacheln kommen direkt von tile.openstreetmap.de (FOSSGIS); bei hoher Last bitte deren Nutzungsrichtlinie beachten.
+
+## Lizenz
+
+Eigener Code: MIT, siehe [LICENSE](LICENSE). Leaflet (unter `src/SolarWatcher/wwwroot/lib/leaflet`) steht unter der
+BSD-2-Clause-Lizenz, der Lizenztext liegt dort bei. Kartendaten © OpenStreetMap-Mitwirkende (ODbL).
