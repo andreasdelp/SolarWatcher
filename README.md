@@ -21,7 +21,7 @@ Docker:
 docker compose up -d --build
 ```
 
-Die Anwendung lauscht im Container auf Port 8080 (`/healthz` für Health-Checks).
+Der Container ist auf dem Host unter `127.0.0.1:8022` erreichbar (intern Port 8080, `/healthz` für Health-Checks).
 
 ## Betrieb hinter einem Reverse-Proxy im Unterverzeichnis
 
@@ -32,7 +32,7 @@ Das Frontend verwendet ausschließlich relative URLs. Es gibt zwei Varianten:
 ```nginx
 location = /solarwatcher { return 301 /solarwatcher/; }
 location /solarwatcher/ {
-    proxy_pass http://127.0.0.1:8080/;      # abschließender Schrägstrich: Präfix wird entfernt
+    proxy_pass http://127.0.0.1:8022/;      # abschließender Schrägstrich: Präfix wird entfernt
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
@@ -44,7 +44,7 @@ location /solarwatcher/ {
 
 ```nginx
 location /solarwatcher {
-    proxy_pass http://127.0.0.1:8080;       # ohne Schrägstrich: Pfad bleibt erhalten
+    proxy_pass http://127.0.0.1:8022;       # ohne Schrägstrich: Pfad bleibt erhalten
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
