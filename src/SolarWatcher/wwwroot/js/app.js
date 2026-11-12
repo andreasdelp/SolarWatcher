@@ -322,7 +322,8 @@ map.on('click', ev => setPin(ev.latlng));
 // Der Standort bleibt im Browser; er wird nicht an den Server übertragen.
 const locateLayer = L.layerGroup().addTo(map);
 let myPosition = null;   // L.LatLng
-let watching = false;
+let watchId = null;
+let highAccuracy = true;
 let centerOnFix = false;
 let locateButton = null;
 
@@ -349,19 +350,50 @@ function onPosition(pos) {
 }
 
 function onPositionError(err) {
-    centerOnFix = false;
     if (myPosition) return; // letzte bekannte Position weiter anzeigen
-    watching = false;
-    setLocateState('error', err.code === err.PERMISSION_DENIED
-        ? 'Standort nicht freigegeben – im Browser erlauben und erneut klicken'
-        : 'Standort konnte nicht ermittelt werden – erneut klicken');
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+
+    // Manche Browser (u. a. Firefox für Android) liefern mit "hoher Genauigkeit" nur per GPS und laufen
+    // in Gebäuden in eine Zeitüberschreitung - dann genügt die gröbere Netzwerk-Ortung.
+    if (err.code !== err.PERMISSION_DENIED && highAccuracy) {
+        highAccuracy = false;
+        startWatching();
+        return;
+    }
+
+    const wanted = centerOnFix; // nur melden, wenn der Benutzer selbst danach gefragt hat
+    centerOnFix = false;
+    const message = !window.isSecureContext
+        ? 'Den Standort geben Browser nur über eine HTTPS-Verbindung heraus.'
+        : err.code === err.PERMISSION_DENIED
+            ? 'Standort nicht freigegeben. Bitte den Standortzugriff für diese Seite (und in Android für den Browser) erlauben.'
+            : 'Standort konnte nicht ermittelt werden. Ist die Ortung des Geräts eingeschaltet?';
+    setLocateState('error', message);
+    if (wanted) showNotice(message);
 }
 
 function startWatching() {
-    if (watching || !navigator.geolocation) return;
-    watching = true;
+    if (watchId !== null || !navigator.geolocation) return;
     setLocateState('busy', 'Standort wird ermittelt …');
-    navigator.geolocation.watchPosition(onPosition, onPositionError, { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 });
+    watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
+        enableHighAccuracy: highAccuracy, maximumAge: 30000, timeout: highAccuracy ? 12000 : 30000,
+    });
+}
+
+/** Kurze Meldung über der Karte - Tooltips der Schaltflächen sind auf Touch-Geräten nicht sichtbar. */
+function showNotice(text) {
+    let el = document.getElementById('notice');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'notice';
+        el.setAttribute('role', 'status');
+        map.getContainer().append(el);
+    }
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(showNotice.timer);
+    showNotice.timer = setTimeout(() => { el.hidden = true; }, 8000);
 }
 
 if (navigator.geolocation) {
@@ -381,7 +413,7 @@ if (navigator.geolocation) {
                     map.setView(myPosition, Math.max(map.getZoom(), 6), { animate: false });
                 } else {
                     centerOnFix = true;
-                    watching = watching && locateButton.dataset.state === 'busy';
+                    if (watchId === null) highAccuracy = true; // neuer Versuch nach einem Fehler
                     startWatching();
                 }
             });

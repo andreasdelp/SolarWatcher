@@ -208,3 +208,22 @@ footer a { color: inherit; }
     .leaflet-bar a { width: 40px !important; height: 40px !important; line-height: 40px !important; }
     .locate-control svg { width: 22px; height: 22px; }
 }
+
+/* Kurze Meldung über der Karte */
+#notice {
+    position: absolute;
+    z-index: 1000;
+    top: 12px;
+    left: 64px;
+    right: 12px;
+    max-width: 420px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(11, 16, 32, .94);
+    color: var(--text);
+    font: 13.5px/1.4 system-ui, "Segoe UI", Roboto, sans-serif;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .35);
+}
+
+#notice[hidden] { display: none; }

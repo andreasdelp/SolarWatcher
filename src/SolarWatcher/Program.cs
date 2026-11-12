@@ -35,7 +35,12 @@ if (!string.IsNullOrEmpty(pathBase))
 app.UseRouting();
 app.UseResponseCompression();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // Browser sollen Skripte und Styles vor der Verwendung prüfen (ETag), sonst läuft nach einem
+    // Update noch längere Zeit die alte Version aus dem Cache.
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache",
+});
 
 var api = app.MapGroup("/api");
 
