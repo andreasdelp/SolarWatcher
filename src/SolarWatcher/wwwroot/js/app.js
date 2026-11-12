@@ -16,10 +16,21 @@ const nextEl = document.getElementById('next');
 
 // ---------------------------------------------------------------- Karte
 
-const map = L.map('map', { worldCopyJump: true, minZoom: 2, zoomSnap: 0.5 }).setView([48, 10], 4);
+// Die OSM-Kacheln sind fertige Bilder, ihre Schriftgröße lässt sich nicht einstellen. Auf Touch-Geräten
+// wird deshalb das ganze Kartenbild vergrößert dargestellt (größere Kacheln bei passend skaliertem
+// Koordinatensystem) - Beschriftungen werden entsprechend größer, das Bild etwas weicher.
+const touchDevice = matchMedia('(pointer: coarse)').matches || new URLSearchParams(location.search).has('touch');
+const TILE_SIZE = touchDevice ? 352 : 256;
+const crs = L.extend({}, L.CRS.EPSG3857, {
+    scale: zoom => TILE_SIZE * Math.pow(2, zoom),
+    zoom: scale => Math.log(scale / TILE_SIZE) / Math.LN2,
+});
+
+const map = L.map('map', { crs, worldCopyJump: true, minZoom: touchDevice ? 1 : 2, zoomSnap: 0.5 }).setView([48, 10], 4);
 
 // Deutscher OpenStreetMap-Kartenstil: gleiche Daten, Orte weltweit deutsch bzw. lateinisch beschriftet.
 L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
+    tileSize: TILE_SIZE,
     maxZoom: 19,
     maxNativeZoom: 18,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
@@ -305,6 +316,85 @@ map.on('mousemove', ev => {
 });
 map.on('mouseout', hideTooltip);
 map.on('click', ev => setPin(ev.latlng));
+
+// ---------------------------------------------------------------- Eigener Standort
+
+// Der Standort bleibt im Browser; er wird nicht an den Server übertragen.
+const locateLayer = L.layerGroup().addTo(map);
+let myPosition = null;   // L.LatLng
+let watching = false;
+let centerOnFix = false;
+let locateButton = null;
+
+function setLocateState(state, title) {
+    locateButton.dataset.state = state;
+    locateButton.title = title;
+    locateButton.setAttribute('aria-label', title);
+}
+
+function onPosition(pos) {
+    myPosition = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    locateLayer.clearLayers();
+    L.circle(myPosition, {
+        radius: pos.coords.accuracy, color: '#2a7fff', weight: 1, fillColor: '#2a7fff', fillOpacity: 0.12, interactive: false,
+    }).addTo(locateLayer);
+    L.circleMarker(myPosition, {
+        radius: 7, color: '#fff', weight: 2.5, fillColor: '#2a7fff', fillOpacity: 1, interactive: false,
+    }).addTo(locateLayer);
+    setLocateState('active', 'Zum eigenen Standort springen');
+    if (centerOnFix) {
+        centerOnFix = false;
+        map.setView(myPosition, Math.max(map.getZoom(), 6), { animate: false });
+    }
+}
+
+function onPositionError(err) {
+    centerOnFix = false;
+    if (myPosition) return; // letzte bekannte Position weiter anzeigen
+    watching = false;
+    setLocateState('error', err.code === err.PERMISSION_DENIED
+        ? 'Standort nicht freigegeben – im Browser erlauben und erneut klicken'
+        : 'Standort konnte nicht ermittelt werden – erneut klicken');
+}
+
+function startWatching() {
+    if (watching || !navigator.geolocation) return;
+    watching = true;
+    setLocateState('busy', 'Standort wird ermittelt …');
+    navigator.geolocation.watchPosition(onPosition, onPositionError, { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 });
+}
+
+if (navigator.geolocation) {
+    const LocateControl = L.Control.extend({
+        options: { position: 'topleft' },
+        onAdd() {
+            const bar = L.DomUtil.create('div', 'leaflet-bar leaflet-control locate-control');
+            locateButton = L.DomUtil.create('a', '', bar);
+            locateButton.href = '#';
+            locateButton.role = 'button';
+            locateButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><circle class="dot" cx="12" cy="12" r="2.6"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+            setLocateState('idle', 'Eigenen Standort anzeigen');
+            L.DomEvent.disableClickPropagation(bar);
+            L.DomEvent.on(locateButton, 'click', ev => {
+                L.DomEvent.preventDefault(ev);
+                if (myPosition) {
+                    map.setView(myPosition, Math.max(map.getZoom(), 6), { animate: false });
+                } else {
+                    centerOnFix = true;
+                    watching = watching && locateButton.dataset.state === 'busy';
+                    startWatching();
+                }
+            });
+            return bar;
+        },
+    });
+    map.addControl(new LocateControl());
+
+    // Ist der Standort bereits freigegeben, wird er ohne Nachfrage angezeigt (ohne die Karte zu verschieben).
+    navigator.permissions?.query({ name: 'geolocation' })
+        .then(status => { if (status.state === 'granted') startWatching(); })
+        .catch(() => { });
+}
 
 // ---------------------------------------------------------------- Start
 

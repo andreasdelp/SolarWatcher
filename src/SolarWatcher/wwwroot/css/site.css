@@ -186,3 +186,25 @@ footer a { color: inherit; }
     #panel header { padding: 8px 18px; }
     #panel header p, footer { display: none; }
 }
+
+/* Schaltfläche "Eigener Standort" */
+.locate-control a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #333;
+}
+
+.locate-control svg { width: 18px; height: 18px; }
+.locate-control .dot { fill: none; }
+.locate-control a[data-state="active"] { color: #2a7fff; }
+.locate-control a[data-state="active"] .dot { fill: currentColor; }
+.locate-control a[data-state="error"] { color: #c0392b; }
+.locate-control a[data-state="busy"] svg { animation: locate-pulse 1s ease-in-out infinite alternate; }
+
+@keyframes locate-pulse { from { opacity: 1; } to { opacity: .3; } }
+
+@media (pointer: coarse) {
+    .leaflet-bar a { width: 40px !important; height: 40px !important; line-height: 40px !important; }
+    .locate-control svg { width: 22px; height: 22px; }
+}

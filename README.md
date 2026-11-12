@@ -6,6 +6,7 @@ Interaktive Karte der totalen Sonnenfinsternisse von 2026 bis 2100 (ASP.NET Core
 - Infofenster mit Auswahlzeile (vor/zurück) und den Kenndaten der gewählten Finsternis
 - Tooltip im Streifen (Maus): Beginn und Ende der Totalität in Ortszeit, Dauer, Sonnenhöhe
 - Klick oder Tippen setzt eine verschiebbare Markierung; die Ortsdetails stehen dann im Infofenster
+- Eigener Standort als blauer Punkt (Schaltfläche unter dem Zoom); auf Touch-Geräten vergrößertes Kartenbild
 
 ## Starten
 
